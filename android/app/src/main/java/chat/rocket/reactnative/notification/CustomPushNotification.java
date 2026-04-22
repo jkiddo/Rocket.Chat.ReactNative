@@ -53,6 +53,9 @@ public class CustomPushNotification {
     public static final String KEY_REPLY = "KEY_REPLY";
     public static final String NOTIFICATION_ID = "NOTIFICATION_ID";
     private static final String ACTION_MARK_AS_READ = "chat.rocket.reactnative.ACTION_MARK_AS_READ";
+    // Platform Notification.Action.Builder has no setShowsUserInterface; the value lives
+    // in the action's extras under this key (matches androidx NotificationCompat).
+    private static final String EXTRA_SHOWS_USER_INTERFACE = "android.support.action.showsUserInterface";
     private static final String CHANNEL_ID = "rocketchatrn_channel_01";
     private static final String CHANNEL_NAME = "Messages";
     private static final String CALLS_CHANNEL_ID = "rocketchatrn_channel_calls";
@@ -579,9 +582,10 @@ public class CustomPushNotification {
 
         // Android Auto only surfaces the action when both flags are set.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            replyActionBuilder
-                    .setSemanticAction(Notification.Action.SEMANTIC_ACTION_REPLY)
-                    .setShowsUserInterface(false);
+            replyActionBuilder.setSemanticAction(Notification.Action.SEMANTIC_ACTION_REPLY);
+            Bundle actionExtras = new Bundle();
+            actionExtras.putBoolean(EXTRA_SHOWS_USER_INTERFACE, false);
+            replyActionBuilder.addExtras(actionExtras);
         }
 
         notification
@@ -618,9 +622,10 @@ public class CustomPushNotification {
 
         // Android Auto only surfaces the action when both flags are set.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            markReadActionBuilder
-                    .setSemanticAction(Notification.Action.SEMANTIC_ACTION_MARK_AS_READ)
-                    .setShowsUserInterface(false);
+            markReadActionBuilder.setSemanticAction(Notification.Action.SEMANTIC_ACTION_MARK_AS_READ);
+            Bundle actionExtras = new Bundle();
+            actionExtras.putBoolean(EXTRA_SHOWS_USER_INTERFACE, false);
+            markReadActionBuilder.addExtras(actionExtras);
         }
 
         notification.addAction(markReadActionBuilder.build());
