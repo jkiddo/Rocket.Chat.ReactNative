@@ -89,6 +89,10 @@
             android:enabled="true"
             android:exported="true" />
         <receiver
+            android:name="chat.rocket.reactnative.notification.MarkAsReadBroadcast"
+            android:enabled="true"
+            android:exported="true" />
+        <receiver
             android:name="chat.rocket.reactnative.notification.DismissNotification"
             android:enabled="true"
             android:exported="true" >
@@ -105,6 +109,11 @@
         <meta-data
             android:name="com.bugsnag.android.API_KEY"
             android:value="${BugsnagAPIKey}" />
+
+        <!-- Android Auto: declare this app as an Auto-compatible messaging app -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
     </application>
 
     <queries>

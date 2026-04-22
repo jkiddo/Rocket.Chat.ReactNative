@@ -6,8 +6,10 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Person;
 import android.app.RemoteInput;
+import android.app.UiModeManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -50,6 +52,7 @@ public class CustomPushNotification {
     // Constants
     public static final String KEY_REPLY = "KEY_REPLY";
     public static final String NOTIFICATION_ID = "NOTIFICATION_ID";
+    private static final String ACTION_MARK_AS_READ = "chat.rocket.reactnative.ACTION_MARK_AS_READ";
     private static final String CHANNEL_ID = "rocketchatrn_channel_01";
     private static final String CHANNEL_NAME = "Messages";
     private static final String CALLS_CHANNEL_ID = "rocketchatrn_channel_calls";
@@ -79,6 +82,16 @@ public class CustomPushNotification {
      */
     public static boolean isAppInForeground() {
         return ProcessLifecycleOwner.get().getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED);
+    }
+
+    /**
+     * True when the device is projecting to Android Auto (or an automotive head unit).
+     * Used to bypass the foreground-skip so that Auto still receives the notification
+     * even if the phone app happens to be visible.
+     */
+    private boolean isCarUiMode() {
+        UiModeManager uiModeManager = (UiModeManager) mContext.getSystemService(Context.UI_MODE_SERVICE);
+        return uiModeManager != null && uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_CAR;
     }
     
     public void onReceived() {
@@ -246,8 +259,10 @@ public class CustomPushNotification {
                 Log.d(TAG, "[Before add to notificationMessages] notId=" + notId + ", bundle.message length=" + (bundle.getString("message") != null ? bundle.getString("message").length() : 0) + ", bundle.notificationLoaded=" + bundle.getBoolean("notificationLoaded", false));
             }
 
-            // Don't show notification if app is in foreground
-            if (isAppInForeground()) {
+            // Don't show notification if app is in foreground, unless the device is
+            // projecting to Android Auto — Auto needs the notification to be posted
+            // regardless of the phone app's state.
+            if (isAppInForeground() && !isCarUiMode()) {
                 if (ENABLE_VERBOSE_LOGS) {
                     Log.d(TAG, "App is in foreground, skipping native notification");
                 }
@@ -372,6 +387,7 @@ public class CustomPushNotification {
             Log.i(TAG, "[buildNotification] ✅ Rendering FULL notification style");
             notificationStyle(notification, notificationId, mBundle);
             notificationReply(notification, notificationId, mBundle);
+            notificationMarkAsRead(notification, notificationId, mBundle);
         } else {
             Log.w(TAG, "[buildNotification] ⚠️ Rendering FALLBACK notification");
             // Cancel previous fallback notifications from same server
@@ -490,6 +506,11 @@ public class CustomPushNotification {
             String conversationTitle = title;
             messageStyle.setConversationTitle(conversationTitle);
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                boolean isGroup = bundleEjson != null && bundleEjson.type != null && !"d".equals(bundleEjson.type);
+                messageStyle.setGroupConversation(isGroup);
+            }
+
             if (bundles != null) {
                 for (Bundle data : bundles) {
                     long timestamp = data.getLong("time");
@@ -552,14 +573,57 @@ public class CustomPushNotification {
                 .setLabel(label)
                 .build();
 
-        Notification.Action replyAction = new Notification.Action.Builder(smallIconResId, label, replyPendingIntent)
+        Notification.Action.Builder replyActionBuilder = new Notification.Action.Builder(smallIconResId, label, replyPendingIntent)
                 .addRemoteInput(remoteInput)
-                .setAllowGeneratedReplies(true)
-                .build();
+                .setAllowGeneratedReplies(true);
+
+        // Android Auto only surfaces the action when both flags are set.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            replyActionBuilder
+                    .setSemanticAction(Notification.Action.SEMANTIC_ACTION_REPLY)
+                    .setShowsUserInterface(false);
+        }
 
         notification
                 .setShowWhen(true)
-                .addAction(replyAction);
+                .addAction(replyActionBuilder.build());
+    }
+
+    private void notificationMarkAsRead(Notification.Builder notification, int notificationId, Bundle bundle) {
+        String notId = bundle.getString("notId", "1");
+        String ejson = bundle.getString("ejson", "{}");
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || notId.equals("1") || ejson.equals("{}")) {
+            return;
+        }
+
+        String label = "Mark as read";
+
+        final Resources res = mContext.getResources();
+        String packageName = mContext.getPackageName();
+        int smallIconResId = res.getIdentifier("ic_notification", "drawable", packageName);
+
+        Intent markReadIntent = new Intent(mContext, MarkAsReadBroadcast.class);
+        markReadIntent.setAction(ACTION_MARK_AS_READ);
+        markReadIntent.putExtra("pushNotification", bundle);
+
+        PendingIntent markReadPendingIntent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            markReadPendingIntent = PendingIntent.getBroadcast(mContext, notificationId, markReadIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        } else {
+            markReadPendingIntent = PendingIntent.getBroadcast(mContext, notificationId, markReadIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+        }
+
+        Notification.Action.Builder markReadActionBuilder =
+                new Notification.Action.Builder(smallIconResId, label, markReadPendingIntent);
+
+        // Android Auto only surfaces the action when both flags are set.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            markReadActionBuilder
+                    .setSemanticAction(Notification.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                    .setShowsUserInterface(false);
+        }
+
+        notification.addAction(markReadActionBuilder.build());
     }
 
     private void notificationDismiss(Notification.Builder notification, int notificationId) {
